@@ -86,23 +86,37 @@ class engineClass:
         self.engine_friction = 10
         self.playing_sound = self.rpm
         self.ignition = False
+        self.running = False
+        self.starting = False
+        self.start_speed = 50
     
     def get_power(self):
+        if self.starting:
+            self.rpm += self.start_speed
+
+        if self.rpm > 2000 and self.starting:
+            self.starting = False
+            self.running = True
+
         try:
             power_diff = (POWER_CURVE[(math.ceil(self.rpm / 100)) * 100]) - (POWER_CURVE[(math.floor(self.rpm / 100)) * 100])
             rpm = (math.ceil(self.rpm / 100)) * 100
             rpm_diff = self.rpm - rpm
             self.power = rpm_diff / 100 * power_diff + POWER_CURVE[rpm]
         except:
-            if self.rpm == 0:
+            if self.rpm < 1000:
                 self.power = 0
+                self.running = False
     
     def engine_sounds(self):
         global keys
         rpm = (round(self.rpm / 100)) * 100
 
         # numbered rpm
-        if (type(self.rpm) == int or type(self.rpm) == float) and self.rpm < 9000 and (self.rpm > 2500 or keys[pygame.K_w]) and self.rpm > 1000:
+        if ((type(self.rpm) == int or type(self.rpm) == float) 
+            and self.rpm < 9000 
+            and (self.rpm > 2500 or keys[pygame.K_w]) 
+            and self.rpm > 1000):
 
             # sound loop
             if not channel1.get_busy() and self.playing_sound == rpm:
@@ -122,35 +136,59 @@ class engineClass:
                 channel1.play(REDLINE_SFX)
             
             # rpm change
-            if self.playing_sound < 9000 and rpm >= 9000:
+            if self.playing_sound <= 9000 and rpm >= 9000:
                 channel1.stop()
                 channel1.play(REDLINE_SFX)
                 self.playing_sound = rpm
         
         # idle sfx
-        elif self.rpm > 2000 and self.rpm < 2500 and not keys[pygame.K_w]:
+        elif (self.rpm > 2000 
+            and self.rpm < 2500 
+            and not keys[pygame.K_w]):
 
             # sound loop
-            if not channel1.get_busy() and rpm > 2000 and rpm < 2500 and not keys[pygame.K_w]:
+            if (not channel1.get_busy() 
+                and rpm > 2000 
+                and rpm < 2500 
+                and not keys[pygame.K_w]):
+
                 channel1.play(IDLE_SFX)
             
             # rpm change
-            if self.playing_sound != 420 and rpm > 2000 and rpm < 2500 and not keys[pygame.K_w]:
+            if (self.playing_sound != 420 
+                and rpm > 2000 
+                and rpm < 2500 
+                and not keys[pygame.K_w]):
+
                 channel1.stop()
                 channel1.play(IDLE_SFX)
                 self.playing_sound = 420
+        
+        elif self.rpm < 2000 and self.running and self.playing_sound != 69:
+            channel1.stop()
+            channel1.play(SHUTDOWN_SFX)
+            self.playing_sound = 69
     
     def accelerate(self):
-        if self.rpm < 9300:
+        if self.rpm < 9300 and self.ignition:
             self.rpm += self.power / self.flywheel_mass
         if self.rpm > 9300:
             self.rpm -= 300
 
     def deccelerate(self):
-        if self.rpm > 2100:
-            self.rpm -= self.engine_friction / self.flywheel_mass * engine.rpm / 750
-        elif self.rpm < 2100 and self.rpm > 1000:
+        if self.rpm > 0:
+            self.rpm -= self.engine_friction / self.flywheel_mass * engine.rpm / 750 + 1
+        elif self.rpm < 0:
+            self.rpm = 0
+
+        if self.rpm < 2100 and self.rpm > 1000 and self.ignition:
             self.rpm += 200
+    
+    def start(self):
+        if self.rpm < 2100 and self.ignition and not self.running:
+            self.starting = True
+            channel1.play(STARTUP_SFX)
+
 
 # CREATE CLASS INSTANCES
 
@@ -159,7 +197,6 @@ engine = engineClass()
 # MAIN GAME LOOP
 
 run = True
-counter = 0
 
 while run:
 
@@ -167,21 +204,36 @@ while run:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             quit()
+        
+        # single key press actions
+        if event.type == pygame.KEYDOWN:
+
+            if event.key == pygame.K_o:
+                engine.start()
+            
+            if event.key == pygame.K_i:
+                if not engine.ignition:
+                    engine.ignition = True
+                else:
+                    engine.ignition = False
+
     
-    # keyboard actions
+    # key hold actions
 
     keys = pygame.key.get_pressed()
 
-    if keys[pygame.K_w]:
+    pygame.key.set_repeat()
+
+    if keys[pygame.K_w] and engine.ignition:
         engine.accelerate()
-    else:
+    elif not keys[pygame.K_w] or not engine.ignition:
         engine.deccelerate()
 
     # class actions
 
     engine.get_power()
     engine.engine_sounds()
-    print(f'rpm: {engine.rpm}, engine power: {engine.power} hp')    
+    print(f'rpm: {round(engine.rpm)}, engine power: {round(engine.power)} hp, ignition: {engine.ignition}')    
 
     # drawing
 
